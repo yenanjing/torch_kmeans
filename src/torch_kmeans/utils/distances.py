@@ -137,6 +137,7 @@ class LpDistance(BaseDistance):
     ) -> Tensor:
         """Computes the pairwise distance between
         vectors v1, v2 using the p-norm"""
+
         return torch.nn.functional.pairwise_distance(query_emb, ref_emb, p=self.p)
 
 

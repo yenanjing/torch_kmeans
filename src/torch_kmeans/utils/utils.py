@@ -35,6 +35,7 @@ def group_by_label_mean(
     x: Tensor,
     labels: Tensor,
     k_max_range: Tensor,
+    sample_weight: Tensor,
 ) -> Tensor:
     """Group samples in x by label
     and calculate grouped mean.
@@ -43,6 +44,7 @@ def group_by_label_mean(
         x: samples (BS, N, D)
         labels: label per sample (BS, M, N)
         k_max_range: range of max number if clusters (BS, K_max)
+        sample_weight: (BS, N)
 
     Returns:
 
@@ -63,6 +65,7 @@ def group_by_label_mean(
         .permute(0, 1, 3, 2)
         .to(x.dtype)
     )
+    M = M * sample_weight[:, None, None, :].expand(bs, m, k_max, n)
     M = F.normalize(M, p=1.0, dim=-1)
     return torch.matmul(M, x[:, None, :, :].expand(bs, m, n, d))
 

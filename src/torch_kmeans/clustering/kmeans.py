@@ -183,6 +183,19 @@ class KMeans(nn.Module):
             raise ValueError("Clustering for k=1 is ambiguous.")
         self._k_max = int(k.max())
         return k.to(dtype=torch.long, device=device)
+    
+    def _check_sample_weight(self, sample_weight, dims: Tuple, device: torch.device = torch.device("cpu")):
+        """Check and (re-)format sample_weight."""
+
+        bs, n, _ = dims
+        if sample_weight is None:
+            sample_weight = torch.ones((bs, n), dtype=torch.float32)
+        else:
+            assert isinstance(sample_weight, Tensor)
+            assert sample_weight.shape == (bs, n)
+            
+        return sample_weight.to(device=device)
+    
 
     def _check_centers(
         self,
@@ -245,6 +258,7 @@ class KMeans(nn.Module):
         x: Tensor,
         k: Optional[Union[LongTensor, Tensor, int]] = None,
         centers: Optional[Tensor] = None,
+        sample_weight: Tensor = None,
         **kwargs,
     ) -> ClusterResult:
         """torch.nn like forward pass.
@@ -264,6 +278,8 @@ class KMeans(nn.Module):
         x_ = x
         k = self._check_k(k, dims=x.shape, device=x.device)
 
+        sample_weight = self._check_sample_weight(sample_weight, dims=x.shape, device=x.device)
+
         # normalize input
         if self.normalize is not None:
             x = self._normalize(x, self.normalize, self.eps)
@@ -275,7 +291,7 @@ class KMeans(nn.Module):
         )
 
         labels, new_centers, inertia, soft_assign = self._cluster(
-            x, centers, k, **kwargs
+            x, centers, k, sample_weight, **kwargs
         )
         return ClusterResult(
             labels=labels,  # type: ignore
@@ -331,6 +347,7 @@ class KMeans(nn.Module):
         x: Tensor,
         k: Optional[Union[LongTensor, Tensor, int]] = None,
         centers: Optional[Tensor] = None,
+        sample_weight: Tensor = None,
         **kwargs,
     ) -> LongTensor:
         """Compute cluster centers and predict cluster index for each sample.
@@ -346,7 +363,7 @@ class KMeans(nn.Module):
             batch tensor of cluster labels for each sample (BS, N)
 
         """
-        return self(x, k=k, centers=centers, **kwargs).labels
+        return self(x, k=k, centers=centers, sample_weight=sample_weight, **kwargs).labels
 
     @torch.no_grad()
     def _center_init(self, x: Tensor, k: LongTensor, **kwargs) -> Tensor:
@@ -515,7 +532,7 @@ class KMeans(nn.Module):
 
     @torch.no_grad()
     def _cluster(
-        self, x: Tensor, centers: Tensor, k: LongTensor, **kwargs
+        self, x: Tensor, centers: Tensor, k: LongTensor, sample_weight: Tensor, **kwargs
     ) -> Tuple[Tensor, Tensor, Tensor, Union[Tensor, Any]]:
         """
         Run Lloyd's k-means algorithm.
@@ -524,6 +541,7 @@ class KMeans(nn.Module):
             x: (BS, N, D)
             centers: (BS, num_init, k_max, D)
             k: (BS, )
+            sample_weight: (BS, N)
 
         """
         if not isinstance(self.distance, LpDistance):
@@ -541,7 +559,7 @@ class KMeans(nn.Module):
             # get cluster assignments
             c_assign = self._assign(x, centers)
             # update cluster centers
-            centers = group_by_label_mean(x, c_assign, k_max_range)
+            centers = group_by_label_mean(x, c_assign, k_max_range, sample_weight)
             if self.tol is not None:
                 # calculate center shift
                 shift = self._calculate_shift(centers, old_centers, p=self.p_norm)
